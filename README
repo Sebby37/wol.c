@@ -1,0 +1,13 @@
+wol.c
+This is an implementation of Wake-On-LAN in pure GNU C99 that uses ZERO header includes, meaning no standard libraries. Wrote it in an afternoon. 
+It implements 4 syscalls: write(), socket(), setsockopt() and sendto() as inline assembly, and runs on Linux in both x86_64 and aarch64 architectures!
+
+To build it, simply run `make`, and to clean it run `make clean`. 
+To run it, run `./wol "aa:bb:cc:dd:ee:ff"`, but replace the bogus one with a real one.
+
+Why did I make this?
+- I wanted a dedicated program to turn my PC on remotely that I could run via Termux instead of a dedicated app
+- I wanted said program to be very lightweight, and for the fun of it I decided to do it without any standard libraries whatsoever
+- C is fun and Sockets are fun
+- I wanted to write a bit of assembly and learn a lil' about how syscalls actually work in assembly (hint: very easily)
+- I wanted to try write cross-platform code in C so it would run on both my laptop and my phone (via Termux)
