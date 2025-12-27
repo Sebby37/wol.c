@@ -78,7 +78,7 @@ static inline long syscall(long n, long a1, long a2, long a3, long a4, long a5, 
 
         asm volatile (
             "svc #0"
-            : "=r"(x0_a1) // Return value is in x0
+            : "+r"(x0_a1) // Return value is in x0
             : "r"(x1_a2),
               "r"(x2_a3),
               "r"(x3_a4),
