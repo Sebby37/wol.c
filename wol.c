@@ -36,9 +36,8 @@ const char newline[] = "\n";
 
 // I LOVE REIMPLEMENTING STANDARD LIBRARY FUNCTIONS
 void* memset(void *s, int c, size_t n) {
-    char *p = s;
     for (size_t i = 0; i < n; i++)
-        p[i] = (char)c;
+        ((char*)s)[i] = (char)c;
     return s;
 }
 size_t strlen(const char *str) {
@@ -47,141 +46,58 @@ size_t strlen(const char *str) {
     return len;
 }
 
-/* ==== Syscall time! ==== */
-
-static inline long sys_write(unsigned int fd, const char *buf, size_t count) {
+// Generic syscall function, can popupate unused args with whatever you want, should be able to execute any and all syscalls in x64/amd64
+static inline long syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
     long ret = -1;
-    #if defined(__x86_64__)
-        asm volatile (
-            "syscall"
-            : "=a"(ret)  // Return value (=) is placed into RAX
-            : "a"(SYS_WRITE), // sys_write is syscall number 1, placed into RAX
-            "D"(fd),   // File descriptor goes into RDI
-            "S"(buf),  // Buffer pointer goes into RSI
-            "d"(count) // Byte count goes into rdx
-            : "rcx", "r11", "memory" // "syscall" clobbers rcx/r11, also this writes into mem so techincally cloberred too!
-        );
-    #elif defined(__aarch64__)
-        register long r_fd asm("x0") = fd;
-        register long r_buf asm("x1") = (long)buf;
-        register long r_count asm("x2") = count;
-        register long r_syscall_num asm("x8") = SYS_WRITE;
 
-        asm volatile (
-            "svc #0"
-            : "+r"(r_fd) // x0 contains the return val
-            : "r"(r_buf), "r"(r_count), "r"(r_syscall_num)
-            : "memory" // Unlike x86, aarch64 only clobbers memory here!
-        );
-        ret = r_fd;
-    #endif
-    return ret;
-}
-
-static inline long sys_socket(int family, int type, int protocol) {
-    long ret = -1;
-    #if defined(__x86_64__)
-        asm volatile (
-            "syscall"
-            : "=a"(ret)   // Return value (=) is placed into RAX
-            : "a"(SYS_SOCKET), // syscall num, placed into RAX
-            "D"(family),  // family goes into RDI
-            "S"(type),    // type goes into RSI
-            "d"(protocol) // protocol goes into rdx
-            : "rcx", "r11", "memory" // "syscall" clobbers rcx/r11, also this writes into mem so techincally cloberred too!
-        );
-    #elif defined(__aarch64__)
-        register long r_family asm("x0") = family;
-        register long r_type asm("x1") = type;
-        register long r_protocol asm("x2") = protocol;
-        register long r_syscall_num asm("x8") = SYS_SOCKET;
-
-        asm volatile (
-            "svc #0"
-            : "+r"(r_family)
-            : "r"(r_type), "r"(r_protocol), "r"(r_syscall_num)
-            : "memory"
-        );
-        ret = r_family;
-    #endif
-    return ret;
-}
-
-static inline long sys_setsockopt(int fd, int level, int optname, const void *optval, int optlen) {
-    long ret = -1;
-    #if defined(__x86_64__)
-        // No mneumonics for these registers, so gotta do it manually
-        register long r_optval asm("r10") = (long)optval;
-        register long r_optlen asm("r8")  = optlen;
+    #if defined (__x86_64__)
+        register long r10_a4 asm("r10") = a4;
+        register long r8_a5  asm("r8")  = a5;
+        register long r9_a6  asm("r9")  = a6;
 
         asm volatile (
             "syscall"
-            : "=a"(ret)
-            : "a"(SYS_SETSOCKOPT),
-            "D"(fd),
-            "S"(level),
-            "d"(optname),
-            "r"(r_optval),
-            "r"(r_optlen)
+            : "=a"(ret) // Return val is in rax
+            : "a"(n),   // Syscall number in rax
+              "D"(a1),  // arg 1 in rdi
+              "S"(a2),  // arg 2 in rsi
+              "d"(a3),  // arg 3 in rdx
+              "r"(r10_a4),
+              "r"(r8_a5),
+              "r"(r9_a6)
             : "rcx", "r11", "memory"
         );
-    #elif defined(__aarch64__)
-        register long r_fd asm("x0") = fd;
-        register long r_level asm("x1") = level;
-        register long r_optname asm("x2") = optname;
-        register long r_optval asm("x3") = (long)optval;
-        register long r_optlen asm("x4") = optlen;
-        register long r_syscall_num asm("x8") = SYS_SETSOCKOPT;
+    #elif defined (__aarch64__)
+        register long x0_a1 asm("x0") = a1;
+        register long x1_a2 asm("x1") = a2;
+        register long x2_a3 asm("x2") = a3;
+        register long x3_a4 asm("x3") = a4;
+        register long x4_a5 asm("x4") = a5;
+        register long x5_a6 asm("x5") = a6;
+        register long x8_n  asm("x8") = n;
 
         asm volatile (
             "svc #0"
-            : "+r"(r_fd)
-            : "r"(r_level), "r"(r_optname), "r"(r_optval), "r"(r_optlen), "r"(r_syscall_num)
+            : "=r"(x0_a1) // Return value is in x0
+            : "r"(x1_a2),
+              "r"(x2_a3),
+              "r"(x3_a4),
+              "r"(x4_a5),
+              "r"(x5_a6),
+              "r"(x8_n)  // Syscall num is in x8
             : "memory"
         );
-        ret = r_fd;
+        ret = x0_a1;
     #endif
+
     return ret;
 }
 
-static inline long sys_sendto(int fd, const void *buf, size_t len, int flags, const void *addr, unsigned int addr_len) {
-    long ret = -1;
-    #if defined(__x86_64__)
-        register long r_flags asm("r10") = flags;
-        register long r_addr  asm("r8")  = (long)addr;
-        register long r_addr_len  asm("r9")  = addr_len;
-
-        asm volatile (
-            "syscall"
-            : "=a"(ret)
-            : "a"(SYS_SENDTO),
-            "D"(fd),
-            "S"(buf),
-            "d"(len),
-            "r"(r_flags),
-            "r"(r_addr),
-            "r"(r_addr_len)
-            : "rcx", "r11", "memory"
-        );
-    #elif defined(__aarch64__)
-        register long r_fd asm("x0") = fd;
-        register long r_buf asm("x1") = (long)buf;
-        register long r_len asm("x2") = len;
-        register long r_flags asm("x3") = flags;
-        register long r_addr asm("x4") = (long)addr;
-        register long r_addr_len asm("x5") = addr_len;
-        register long r_syscall_num asm("x8") = SYS_SENDTO;
-
-        asm volatile (
-            "svc #0"
-            : "+r"(r_fd)
-            : "r"(r_buf), "r"(r_len), "r"(r_flags), "r"(r_addr), "r"(r_addr_len), "r"(r_syscall_num)
-            : "memory"
-        );
-        ret = r_fd;
-    #endif
-    return ret;
-}
+// Helpful syscall macros, now I don't need 4 duplicate functions that do almost the same thing but use ~50 lines each
+#define sys_write(fd, buf, count) syscall(SYS_WRITE, (long)fd, (long)buf, (long)count, 0, 0, 0)
+#define sys_socket(family, type, protocol) syscall(SYS_SOCKET, (long)family, (long)type, (long)protocol, 0, 0, 0)
+#define sys_setsockopt(fd, level, optname, optval, optlen) syscall(SYS_SETSOCKOPT, (long)fd, (long)level, (long)optname, (long)optval, (long)optlen, 0)
+#define sys_sendto(fd, buf, len, flags, addr, addr_len) syscall(SYS_SENDTO, (long)fd, (long)buf, (long)len, (long)flags, (long)addr, (long)addr_len)
 
 /* ==== The actual program! ==== */
 // Converts a nibble character to its corresponding byte
@@ -199,7 +115,7 @@ unsigned char nibble_to_byte(char nibble) {
     return 0xFF;
 }
 // Converts the characters at *hex and *(hex+1) to a single byte
-unsigned char hex_to_byte(char *hex) {
+static inline unsigned char hex_to_byte(char *hex) {
     return (nibble_to_byte(hex[0]) << 4) | nibble_to_byte(hex[1]);
 }
 
@@ -207,7 +123,7 @@ unsigned char hex_to_byte(char *hex) {
 // Takes in the MAC string and a pointer to a 6-byte buffer for the MAC address
 // The MAC can be either of format XX:XX:... or XXXXXX..., anything else is invalid
 int parse_mac(const char *str, unsigned char *out) {
-    // A valid MAC is either 17 chars for XX:XX:..., or 12 chars for XXxxXX...
+    // A valid MAC is either 17 chars for XX_XX:... (where _ is any character), or 12 chars for XXxxXX...
     size_t mac_len = strlen(str);
     if (mac_len != 17 && mac_len != 12)
         return 1;
@@ -249,7 +165,7 @@ invalid_arg:
     for (int i = 0; i < 16; i++)
         for (int m = 0; m < sizeof(MAC); m++)
             packet[6 + i*6 + m] = MAC[m];
-    sys_sendto(sock, packet, sizeof(packet), 0, (struct sockaddr*)&addr, sizeof(addr));
+    sys_sendto(sock, packet, sizeof(packet), 0, &addr, sizeof(addr));
 
     // A nice message is always appreciated, even if its a pain without printf
     sys_write(STDOUT_FD, sent, strlen(sent));
