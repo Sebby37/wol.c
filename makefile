@@ -1,6 +1,16 @@
+CC = gcc
+CFLAGS = -std=gnu99 -masm=intel -march=native -mtune=native \
+		 -ffreestanding -fno-builtin -nostdlib -nolibc \
+		 -fno-stack-protector -fno-pie -no-pie -fomit-frame-pointer
+ERRFLAGS = -Wall -Werror
+SRC = wol.c
+OUT = wol
+
 all:
-	gcc -ffreestanding -fno-builtin -std=gnu99 -masm=intel -O0 wol.c -o wol
+	$(CC) $(SRC) $(CFLAGS) $(ERRFLAGS) -O1 -o $(OUT)
 debug:
-	gcc -ffreestanding -fno-builtin -std=gnu99 -masm=intel -O0 wol.c -o wol -g
+	$(CC) $(SRC) $(CFLAGS) -O0 -o $(OUT) -g
+release:
+	$(CC) $(SRC) $(CFLAGS) $(ERRFLAGS) -O2 -o $(OUT)
 clean:
-	rm -f wol
+	rm -f $(SRC)

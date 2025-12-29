@@ -30,9 +30,13 @@ struct sockaddr_in {
 };
 
 // GCC on my phone was winging
+// Thus strings are hardcoded here
 const char help[] = "Usage: ./wol MAC\n\tMAC\tThe target device's MAC address in the form XX:XX:XX:XX:XX:XX\n";
 const char sent[] = "WOL packet sent to ";
 const char newline[] = "\n";
+const char err_socket[] = "Failed to create socket!\n";
+const char err_setsockopt[] = "Failed to enable broadcast!\n";
+const char err_sendto[] = "Failed to send WOL packet!\n";
 
 // I LOVE REIMPLEMENTING STANDARD LIBRARY FUNCTIONS
 void* memset(void *s, int c, size_t n) {
@@ -99,6 +103,9 @@ static inline long syscall(long n, long a1, long a2, long a3, long a4, long a5, 
 #define sys_setsockopt(fd, level, optname, optval, optlen) syscall(SYS_SETSOCKOPT, (long)fd, (long)level, (long)optname, (long)optval, (long)optlen, 0)
 #define sys_sendto(fd, buf, len, flags, addr, addr_len) syscall(SYS_SENDTO, (long)fd, (long)buf, (long)len, (long)flags, (long)addr, (long)addr_len)
 
+// Print would be nice
+#define print(s) sys_write(STDOUT_FD, s, sizeof(s)-1)
+
 /* ==== The actual program! ==== */
 // Converts a nibble character to its corresponding byte
 unsigned char nibble_to_byte(char nibble) {
@@ -138,7 +145,7 @@ int main(int argc, char **argv) {
     // Can't run the program if we don't have a MAC address lmao
     if (argc < 2) {
 invalid_arg:
-        sys_write(STDOUT_FD, help, strlen(help));
+        print(help);
         return 1;
     }
 
@@ -147,10 +154,19 @@ invalid_arg:
     if (parse_mac(argv[1], MAC) != 0)
         goto invalid_arg; // I LOVE GOTO
 
-    // Enable broadcast on the socket, as per WOL
+    // Create the socket, without <sys/socket.h>, because syscalls are awesome
     int sock = sys_socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == -1) {
+        print(err_socket);
+        return 1;
+    }
+
+    // Enable broadcast on the socket, as per WOL
     int broadcast = 1;
-    sys_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
+    if (sys_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) == -1) {
+        print(err_setsockopt);
+        return 1;
+    }
 
     // Config the socket
     struct sockaddr_in addr;
@@ -165,12 +181,49 @@ invalid_arg:
     for (int i = 0; i < 16; i++)
         for (int m = 0; m < sizeof(MAC); m++)
             packet[6 + i*6 + m] = MAC[m];
-    sys_sendto(sock, packet, sizeof(packet), 0, &addr, sizeof(addr));
+    if (sys_sendto(sock, packet, sizeof(packet), 0, &addr, sizeof(addr)) == -1) {
+        print(err_sendto);
+        return -1;
+    }
 
     // A nice message is always appreciated, even if its a pain without printf
-    sys_write(STDOUT_FD, sent, strlen(sent));
+    print(sent);
     sys_write(STDOUT_FD, argv[1], strlen(argv[1]));
-    sys_write(STDOUT_FD, newline, strlen(newline));
+    print(newline);
 
     return 0;
+}
+
+__attribute__((naked)) void _start(void) {
+    #if defined(__x86_64__)
+        asm volatile (
+            // Load argc (*rsp) and argv (rsp+8) into the argument registers
+            "mov rdi, [rsp]\n"
+            "lea rsi, [rsp+8]\n"
+
+            // Offset the stack by 8 so it's aligned to 16 bytes
+            "sub rsp, 8\n"
+            
+            // Call main!
+            "call main\n"
+
+            // Execute exit syscall, copying the return code from main into rdi and setting the syscall number into rax
+            "mov rdi, rax\n"
+            "mov rax, 60\n"
+            "syscall\n"
+        );
+    #elif defined(__aarch64__)
+        asm volatile (
+            // Load argc (*sp) and argv (sp+8) into the argument registers
+            "ldr x0, [sp]\n"
+            "add x1, sp, #8\n"
+
+            // Call main!
+            "bl main\n"
+
+            // Execute exit syscall, x0 (exit code) is already populated by the main() call
+            "mov x8, #93\n"
+            "svc #0\n"
+        );
+    #endif
 }
