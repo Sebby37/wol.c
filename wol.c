@@ -1,4 +1,4 @@
-// I LOVE WRITE
+// Needed for the write syscall, which is exclusively used for writing to stdout
 #define STDOUT_FD 1
 // Socket consts
 #define AF_INET 2
@@ -21,28 +21,29 @@
 // We dont get size_t for free :(
 typedef unsigned long size_t;
 
-// From <arpa/inet.h>, but more streamlined
-struct sockaddr_in {
-    unsigned short sin_family;
-    unsigned short sin_port;
-    unsigned int s_addr;
-    char sin_zero[8];
+// A manual creation of sockaddr_in from <arpa/inet.h>
+// This way we don't need any Pesky Structs, also I thought it'd be fun to manually create it :)
+// This is why I love C, I can just do this and it makes sense
+const unsigned char sockaddr[] = {
+    0x02, 0x00, // short sin_family = AF_INET = 2
+    0x15, 0x83, // unsigned short port = 0x8315 (port doesn't matter with WOL so it can be anything) (also network order)
+    255,255,255,255, // Dest IP is the broadcast IP (255.255.255.255)
+    0,0,0,0,0,0,0,0, // Padding with 8 0s
 };
 
 // GCC on my phone was winging
 // Thus strings are hardcoded here
-const char help[] = "Usage: ./wol MAC\n\tMAC\tThe target device's MAC address in the form XX:XX:XX:XX:XX:XX\n";
+const char help[] = "Usage: ./wol MAC\n\tMAC\tThe target device's MAC address in the form of XX:XX:XX:XX:XX:XX\n";
 const char sent[] = "WOL packet sent to ";
-const char newline[] = "\n";
 const char err_socket[] = "Failed to create socket!\n";
 const char err_setsockopt[] = "Failed to enable broadcast!\n";
 const char err_sendto[] = "Failed to send WOL packet!\n";
 
 // I LOVE REIMPLEMENTING STANDARD LIBRARY FUNCTIONS
-void* memset(void *s, int c, size_t n) {
+void *memcpy(void *dest, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++)
-        ((char*)s)[i] = (char)c;
-    return s;
+        ((char*)dest)[i] = ((char*)src)[i];
+    return dest;
 }
 size_t strlen(const char *str) {
     size_t len = 0;
@@ -106,6 +107,16 @@ static inline long syscall(long n, long a1, long a2, long a3, long a4, long a5, 
 // Print would be nice
 #define print(s) sys_write(STDOUT_FD, s, sizeof(s)-1)
 
+// Convenient error check macro that's definetly not inspired by ESP_ERR_CHECK
+#define ERR_CHECK(x, s) \
+{ \
+    int errno = x; \
+    if (errno < 0) { \
+        print(s); \
+        return -errno; \
+    } \
+}
+
 /* ==== The actual program! ==== */
 // Converts a nibble character to its corresponding byte
 unsigned char nibble_to_byte(char nibble) {
@@ -150,50 +161,41 @@ invalid_arg:
     }
 
     // Need to convert the string MAC addr to its actual byte representation
+    char *mac_str = argv[1];
     unsigned char MAC[6];
-    if (parse_mac(argv[1], MAC) != 0)
+    if (parse_mac(mac_str, MAC) != 0)
         goto invalid_arg; // I LOVE GOTO
 
     // Create the socket, without <sys/socket.h>, because syscalls are awesome
     int sock = sys_socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == -1) {
-        print(err_socket);
-        return 1;
-    }
+    ERR_CHECK(sock, err_socket);
 
     // Enable broadcast on the socket, as per WOL
     int broadcast = 1;
-    if (sys_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) == -1) {
-        print(err_setsockopt);
-        return 1;
-    }
-
-    // Config the socket
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = 0x8315; // Can be whatever for WOL
-    addr.s_addr = 0xFFFFFFFF; // 255.255.255.255
+    ERR_CHECK(sys_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)), err_setsockopt);
 
     // The WOL packet contains an FF:FF:FF:FF:FF:FF MAC addr, followed by the target MAC repeated 16 times
     unsigned char packet[102];
-    memset(packet, 0xFF, 6);
+    ((long*)packet)[0] = -1; // Cheap trick to set the first 6 bytes to the FF MAC addr (plus the next two but who cares they get overwritten)
     for (int i = 0; i < 16; i++)
         for (int m = 0; m < sizeof(MAC); m++)
             packet[6 + i*6 + m] = MAC[m];
-    if (sys_sendto(sock, packet, sizeof(packet), 0, &addr, sizeof(addr)) == -1) {
-        print(err_sendto);
-        return -1;
-    }
+    ERR_CHECK(sys_sendto(sock, packet, sizeof(packet), 0, sockaddr, sizeof(sockaddr)), err_sendto);
 
     // A nice message is always appreciated, even if its a pain without printf
-    print(sent);
-    sys_write(STDOUT_FD, argv[1], strlen(argv[1]));
-    print(newline);
+    char nice_message[sizeof(sent)-1 + 17 + 2]; // 17 max chars for the MAC address, 1 for the newline and 1 extra byte since the print() macro assumes a null byte and prints sizeof-1
+    size_t mac_len = strlen(mac_str);
+    mac_str[mac_len] = '\n'; // We don't need the \0 anymore, discard it
+
+    // Constructing it myself to save 2 extra write syscalls, bit of a nightmare but I mean c'mon look at this project lmao
+    memcpy(nice_message, sent, sizeof(sent)-1);
+    memcpy(nice_message+sizeof(sent)-1, mac_str, mac_len+1);
+    print(nice_message);
 
     return 0;
 }
 
+// Custom _start entrypoint as a naked function since a prologue could mess up the stack
 __attribute__((naked)) void _start(void) {
     #if defined(__x86_64__)
         asm volatile (

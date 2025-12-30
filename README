@@ -1,9 +1,10 @@
 wol.c
-This is an implementation of Wake-On-LAN in pure GNU C99 that uses ZERO header includes, meaning no standard libraries. Wrote it in an afternoon. 
-It implements 4 syscalls: write(), socket(), setsockopt() and sendto() as inline assembly, and runs on Linux in both x86_64 and aarch64 architectures!
+This is an implementation of Wake-On-LAN in pure GNU C99 that uses ZERO header includes, meaning no standard libraries. Wrote it originally in an afternoon. 
+It implements 4 syscalls: write(), socket(), setsockopt() and sendto() as inline assembly, and runs on Linux in both x86_64 and aarch64 architectures! 
+It has proper error checking on the socket syscalls, returning the errno as the return code on some sort of failure.
 
-To build it, simply run `make`, and to clean it run `make clean`. 
-To run it, run `./wol "aa:bb:cc:dd:ee:ff"`, but replace the bogus one with a real one.
+To build it, simply run `make`, and to clean it run `make clean`. For a debug build run `make debug`, and for an optimized release build run `make release`.
+To run it, run `./wol "aa:bb:cc:dd:ee:ff"`, but replace the bogus one with a real one. If run without an argument, some help dialogue is printed.
 
 Why did I make this?
 - I wanted a dedicated program to turn my PC on remotely that I could run via Termux instead of a dedicated app
@@ -11,3 +12,12 @@ Why did I make this?
 - C is fun and Sockets are fun
 - I wanted to write a bit of assembly and learn a lil' about how syscalls actually work in assembly (hint: very easily)
 - I wanted to try write cross-platform code in C so it would run on both my laptop and my phone (via Termux)
+- This project has happened to be very fun to work on, and I've been trying to get it to be as "perfect" as possible given my vision for it
+
+What are my goals for this?
+- I want a pure C Wake-On-Lan implementation that forgoes the use of any external libraries or header files
+- I want the entire program to lie in one single .c file
+- I want it to natively run on x86_64 and aarch64 Linux, the latter of which specifically being Termux on my Android phone
+- I want it to only do Wake-On-Lan and nothing else, being optimized entirely for this purpose
+- I want the code to be as optimized as possible, running as quickly as possible and with as little memory footprint as possible
+- I want to have fun writing this and for this to be an educational endeavour too, to learn a bit about aarch64, Linux syscalls and executable ABIs
